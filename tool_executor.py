@@ -206,17 +206,99 @@ def handle_display_on_interface(display_type: str, data: dict, config: dict, tit
 
 def handle_get_taxi_ideas_for_today(current_date: str, config: dict, specific_focus: str = None) -> str:
     _tool_log(f"Handling get_taxi_ideas_for_today. Date: {current_date}, Focus: {specific_focus}")
-    if not GOOGLE_SERVICES_AVAILABLE: return "Error: Google AI services are not available for taxi ideas."
-    system_instruction_for_taxi_ideas = f"You are an AI assistant for Dubai Taxi Corporation (DTC). Find actionable ideas, news, and events for taxi services in Dubai for {current_date}. Consider Khaleej Times or local news. If no specific business-impacting ideas are found for {current_date}, respond with: 'No new business ideas found for today, {current_date}, based on current information.' Only provide info for {current_date}."
-    user_prompt_for_gemini = f"Analyze information for Dubai for today, {current_date}, and provide actionable taxi service ideas or relevant event information."
-    if specific_focus: user_prompt_for_gemini += f" Pay special attention to: {specific_focus}."
-    return get_gemini_response(user_prompt_text=user_prompt_for_gemini, system_instruction_text=system_instruction_for_taxi_ideas, use_google_search_tool=True)
+    
+    # Original Gemini implementation (commented out)
+    # if not GOOGLE_SERVICES_AVAILABLE: return "Error: Google AI services are not available for taxi ideas."
+    # system_instruction_for_taxi_ideas = f"You are an AI assistant for Dubai Taxi Corporation (DTC). Find actionable ideas, news, and events for taxi services in Dubai for {current_date}. Consider Khaleej Times or local news. If no specific business-impacting ideas are found for {current_date}, respond with: 'No new business ideas found for today, {current_date}, based on current information.' Only provide info for {current_date}."
+    # user_prompt_for_gemini = f"Analyze information for Dubai for today, {current_date}, and provide actionable taxi service ideas or relevant event information."
+    # if specific_focus: user_prompt_for_gemini += f" Pay special attention to: {specific_focus}."
+    # return get_gemini_response(user_prompt_text=user_prompt_for_gemini, system_instruction_text=system_instruction_for_taxi_ideas, use_google_search_tool=True)
+    
+    # New OpenAI implementation
+    # Check if OpenAI API key is available
+    if not OPENAI_API_KEY_FOR_TOOL_SUMMARIZER:
+        _tool_log("ERROR: OPENAI_API_KEY not found in environment for taxi ideas.")
+        return "Error: OpenAI services are not available for taxi ideas (missing API key)."
+    
+    system_instruction = f"You are an AI assistant for Dubai Taxi Corporation (DTC). Find actionable ideas, news, and events for taxi services in Dubai for {current_date}. Consider Khaleej Times or local news. If no specific business-impacting ideas are found for {current_date}, respond with: 'No new business ideas found for today, {current_date}, based on current information.' Only provide info for {current_date}."
+    
+    user_prompt = f"Analyze information for Dubai for today, {current_date}, and provide actionable taxi service ideas or relevant event information."
+    if specific_focus:
+        user_prompt += f" Pay special attention to: {specific_focus}."
+    
+    try:
+        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY_FOR_TOOL_SUMMARIZER)
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-search-preview",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={
+                "type": "text"
+            },
+            web_search_options={
+                "search_context_size": "high",
+                "user_location": {
+                    "type": "approximate",
+                    "approximate": {
+                        "country": "AE"
+                    }
+                }
+            }
+        )
+        
+        _tool_log(f"Successfully received response from OpenAI for taxi ideas")
+        return response.choices[0].message.content
+    except Exception as e:
+        _tool_log(f"ERROR in get_taxi_ideas_for_today with OpenAI: {e}")
+        return f"Error: Could not get taxi ideas. Detail: {str(e)}"
 
 def handle_general_google_search(search_query: str, config: dict) -> str:
     _tool_log(f"Handling general_google_search. Query: '{search_query}'")
-    if not GOOGLE_SERVICES_AVAILABLE: return "Error: Google AI services are not available for general search."
-    system_instruction_for_general_search = "You are an AI assistant for a Dubai Taxi Corporation (DTC) employee. Answer the user's query based ONLY on Google Search results. Be factual and concise. Context is Dubai-related, professional. If no clear answer, state that. Prioritize reputable sources. Give direct answer."
-    return get_gemini_response(user_prompt_text=search_query, system_instruction_text=system_instruction_for_general_search, use_google_search_tool=True)
+    
+    # Original Gemini implementation (commented out)
+    # if not GOOGLE_SERVICES_AVAILABLE: return "Error: Google AI services are not available for general search."
+    # system_instruction_for_general_search = "You are an AI assistant for a Dubai Taxi Corporation (DTC) employee. Answer the user's query based ONLY on Google Search results. Be factual and concise. Context is Dubai-related, professional. If no clear answer, state that. Prioritize reputable sources. Give direct answer."
+    # return get_gemini_response(user_prompt_text=search_query, system_instruction_text=system_instruction_for_general_search, use_google_search_tool=True)
+    
+    # New OpenAI implementation
+    # Check if OpenAI API key is available
+    if not OPENAI_API_KEY_FOR_TOOL_SUMMARIZER:
+        _tool_log("ERROR: OPENAI_API_KEY not found in environment for general search.")
+        return "Error: OpenAI services are not available for general search (missing API key)."
+    
+    system_instruction = "You are an AI assistant for a Dubai Taxi Corporation (DTC) employee. Answer the user's query based ONLY on search results. Be factual and concise. Context is Dubai-related, professional. If no clear answer, state that. Prioritize reputable sources. Give direct answer."
+    
+    try:
+        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY_FOR_TOOL_SUMMARIZER)
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-search-preview",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": search_query}
+            ],
+            response_format={
+                "type": "text"
+            },
+            web_search_options={
+                "search_context_size": "high",
+                "user_location": {
+                    "type": "approximate",
+                    "approximate": {
+                        "country": "AE"
+                    }
+                }
+            }
+        )
+        
+        _tool_log(f"Successfully received response from OpenAI for general search")
+        return response.choices[0].message.content
+    except Exception as e:
+        _tool_log(f"ERROR in general_google_search with OpenAI: {e}")
+        return f"Error: Could not get search results. Detail: {str(e)}"
 
 # --- New Tool Handlers for Phase 1 ---
 

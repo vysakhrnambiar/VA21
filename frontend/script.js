@@ -197,22 +197,269 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderGraph(type, payload) { 
-         displayActiveContent(() => {
-            const graphOuterContainer = document.createElement('div'); graphOuterContainer.classList.add('graph-content');
-            if (payload.title) { const titleElement = document.createElement('h2'); titleElement.classList.add('chart-title'); titleElement.textContent = payload.title; graphOuterContainer.appendChild(titleElement); }
-            const canvas = document.createElement('canvas'); canvas.style.height = 'clamp(300px, 50vh, 450px)'; canvas.style.width = '100%'; graphOuterContainer.appendChild(canvas);
-            const ctx = canvas.getContext('2d');
-            const datasets = payload.datasets.map(ds => ({ label: ds.label, data: ds.values, backgroundColor: type === 'graph_pie' ? ['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe', '#eff6ff'].slice(0, ds.values.length) : 'rgba(59, 130, 246, 0.3)', borderColor: type === 'graph_pie' ? '#100f24' : 'rgba(59, 130, 246, 1)', borderWidth: type === 'graph_pie' ? 2 : 1.5, tension: type === 'graph_line' ? 0.3 : undefined, pointBackgroundColor: type === 'graph_line' ? 'rgba(59, 130, 246, 1)' : undefined, pointBorderColor: type === 'graph_line' ? '#fff' : undefined, pointHoverBackgroundColor: type === 'graph_line' ? '#fff' : undefined, pointHoverBorderColor: type === 'graph_line' ? 'rgba(59, 130, 246, 1)' : undefined, }));
-            let chartTypeJS; switch(type) { case 'graph_bar': chartTypeJS = 'bar'; break; case 'graph_line': chartTypeJS = 'line'; break; case 'graph_pie': chartTypeJS = 'pie'; break; default: const errorDiv = document.createElement('div'); errorDiv.innerHTML = marked.parse(`<h2>Error</h2><p>Unknown graph type: ${type}</p>`); return errorDiv;}
-            const chartData = { labels: payload.labels, datasets: datasets };
-            Chart.defaults.color = '#9ca3af'; Chart.defaults.borderColor = '#374151'; Chart.defaults.font.family = "'Space Grotesk', 'Noto Sans', sans-serif";
-            const chartOptions = { responsive: true, maintainAspectRatio: false, animation: payload.options?.animated !== undefined ? payload.options.animated : { duration: 800, easing: 'easeInOutQuart' }, scales: {}, plugins: { title: { display: false }, legend: { position: 'bottom', display: (payload.datasets.length > 1 && type !== 'graph_pie') || (type === 'graph_pie' && payload.labels.length > 1), labels: { color: '#d1d5db', padding: 15, font: {size: 13} } }, tooltip: { backgroundColor: 'rgba(31, 29, 61, 0.9)', titleColor: '#f0f0ff', bodyColor: '#d0d0f0', padding: 12, cornerRadius: 3, titleFont: { weight: 'bold', size: 14 }, bodyFont: { size: 13 }, boxPadding: 5 } } };
-            if (type === 'graph_bar' || type === 'graph_line') { chartOptions.scales.x = { title: { display: !!payload.options?.x_axis_label, text: payload.options?.x_axis_label, color: '#d1d5db', font:{size:13, weight:'500'} }, grid: { color: '#21204b', drawBorder: false }, ticks: { color: '#9ca3af', font:{size:12} } }; chartOptions.scales.y = { title: { display: !!payload.options?.y_axis_label, text: payload.options?.y_axis_label, color: '#d1d5db', font:{size:13, weight:'500'} }, beginAtZero: true, grid: { color: '#21204b', drawBorder: false }, ticks: { color: '#9ca3af', font:{size:12}, callback: function(value) { if (value >= 1000000) return (value / 1000000) + 'M'; if (value >= 1000) return (value / 1000) + 'K'; return value; } } }; }
-            if (chartInstance) chartInstance.destroy(); chartInstance = new Chart(ctx, { type: chartTypeJS, data: chartData, options: chartOptions });
-            return graphOuterContainer;
+// PASTE THIS ENTIRE FUNCTION TO REPLACE THE OLD renderGraph
+function renderGraph(type, payload) { 
+    displayActiveContent(() => {
+        const graphOuterContainer = document.createElement('div'); 
+        graphOuterContainer.classList.add('graph-content');
+        
+        if (payload.title) { 
+            const titleElement = document.createElement('h2'); 
+            titleElement.classList.add('chart-title'); 
+            titleElement.textContent = payload.title; 
+            graphOuterContainer.appendChild(titleElement); 
+        }
+        
+        const canvas = document.createElement('canvas'); 
+        canvas.style.height = 'clamp(300px, 50vh, 450px)'; 
+        canvas.style.width = '100%'; 
+        graphOuterContainer.appendChild(canvas);
+        
+        const ctx = canvas.getContext('2d');
+        
+        // Enhanced dataset processing
+        const datasets = payload.datasets.map(ds => {
+            // Start with basic properties
+            const datasetConfig = {
+                label: ds.label,
+                data: ds.values
+            };
+            
+            // Process mixed chart types
+            if (type === 'graph_mixed' && ds.chartType) {
+                datasetConfig.type = ds.chartType;
+            }
+            
+            // Apply all custom properties from the dataset if defined
+            const propertiesToApply = [
+                'backgroundColor', 'borderColor', 'borderWidth', 'fill', 'tension',
+                'pointStyle', 'pointRadius', 'pointBackgroundColor', 'pointBorderColor',
+                'pointHoverBackgroundColor', 'pointHoverBorderColor', 'yAxisID', 
+                'xAxisID', 'stack', 'barPercentage', 'categoryPercentage'
+            ];
+            
+            propertiesToApply.forEach(prop => {
+                if (ds[prop] !== undefined) {
+                    datasetConfig[prop] = ds[prop];
+                }
+            });
+            
+            // Apply appropriate defaults based on chart type
+            if (type === 'graph_pie' || type === 'graph_doughnut' || type === 'graph_polar') {
+                if (datasetConfig.backgroundColor === undefined) {
+                    datasetConfig.backgroundColor = [
+                        '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe', '#eff6ff',
+                        '#ef4444', '#f87171', '#fca5a5', '#10b981', '#34d399', '#6ee7b7'
+                    ].slice(0, ds.values.length);
+                }
+                if (datasetConfig.borderColor === undefined) {
+                    datasetConfig.borderColor = '#100f24';
+                }
+                if (datasetConfig.borderWidth === undefined) {
+                    datasetConfig.borderWidth = 2;
+                }
+            } else {
+                // For bar/line charts
+                if (datasetConfig.backgroundColor === undefined) {
+                    datasetConfig.backgroundColor = 'rgba(59, 130, 246, 0.3)';
+                }
+                if (datasetConfig.borderColor === undefined) {
+                    datasetConfig.borderColor = 'rgba(59, 130, 246, 1)';
+                }
+                if (datasetConfig.borderWidth === undefined) {
+                    datasetConfig.borderWidth = 1.5;
+                }
+            }
+            
+            // Apply line-specific defaults
+            if (type === 'graph_line' || ds.chartType === 'line') {
+                if (datasetConfig.tension === undefined) {
+                    datasetConfig.tension = 0.3;
+                }
+                
+                if (datasetConfig.pointBackgroundColor === undefined) {
+                    datasetConfig.pointBackgroundColor = datasetConfig.borderColor;
+                }
+                if (datasetConfig.pointBorderColor === undefined) {
+                    datasetConfig.pointBorderColor = '#fff';
+                }
+                if (datasetConfig.pointHoverBackgroundColor === undefined) {
+                    datasetConfig.pointHoverBackgroundColor = '#fff';
+                }
+                if (datasetConfig.pointHoverBorderColor === undefined) {
+                    datasetConfig.pointHoverBorderColor = datasetConfig.borderColor;
+                }
+            }
+            
+            return datasetConfig;
         });
-    }
+        
+        // Determine chart type
+        let chartTypeJS;
+        if (type === 'graph_mixed') {
+            // For mixed charts, individual datasets specify their types
+            chartTypeJS = 'bar'; // Default type if not specified
+        } else {
+            switch(type) {
+                case 'graph_bar': chartTypeJS = 'bar'; break;
+                case 'graph_line': chartTypeJS = 'line'; break;
+                case 'graph_pie': chartTypeJS = 'pie'; break;
+                case 'graph_doughnut': chartTypeJS = 'doughnut'; break;
+                case 'graph_radar': chartTypeJS = 'radar'; break;
+                case 'graph_polar': chartTypeJS = 'polarArea'; break;
+                case 'graph_scatter': chartTypeJS = 'scatter'; break;
+                case 'graph_bubble': chartTypeJS = 'bubble'; break;
+                default: 
+                    const errorDiv = document.createElement('div');
+                    errorDiv.innerHTML = marked.parse(`<h2>Error</h2><p>Unknown graph type: ${type}</p>`);
+                    return errorDiv;
+            }
+        }
+        
+        // Prepare chart data
+        const chartData = { 
+            labels: payload.labels, 
+            datasets: datasets 
+        };
+        
+        // Set Chart.js defaults
+        Chart.defaults.color = '#9ca3af';
+        Chart.defaults.borderColor = '#374151';
+        Chart.defaults.font.family = "'Space Grotesk', 'Noto Sans', sans-serif";
+        
+        // Build chart options
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: payload.options?.animation || 
+                      (payload.options?.animated !== undefined ? 
+                      payload.options.animated : 
+                      { duration: 800, easing: 'easeInOutQuart' }),
+            
+            // Set up scales (axes)
+            scales: {},
+            
+            // Set up plugins
+            plugins: {
+                title: { display: false },
+                
+                // Configure legend
+                legend: {
+                    position: 'bottom',
+                    display: (payload.datasets.length > 1 && !['graph_pie', 'graph_doughnut', 'graph_polar'].includes(type)) || 
+                             (['graph_pie', 'graph_doughnut', 'graph_polar'].includes(type) && payload.labels.length > 1),
+                    labels: {
+                        color: '#d1d5db',
+                        padding: 15,
+                        font: {size: 13}
+                    }
+                },
+                
+                // Configure tooltip
+                tooltip: {
+                    backgroundColor: 'rgba(31, 29, 61, 0.9)',
+                    titleColor: '#f0f0ff',
+                    bodyColor: '#d0d0f0',
+                    padding: 12,
+                    cornerRadius: 3,
+                    titleFont: { weight: 'bold', size: 14 },
+                    bodyFont: { size: 13 },
+                    boxPadding: 5
+                }
+            }
+        };
+        
+        // Apply custom scales if provided
+        if (payload.options?.scales) {
+            chartOptions.scales = payload.options.scales;
+        } 
+        // Otherwise set up default scales for appropriate chart types
+        else if (!['graph_pie', 'graph_doughnut', 'graph_radar', 'graph_polar'].includes(type)) {
+            chartOptions.scales.x = {
+                title: {
+                    display: !!payload.options?.x_axis_label,
+                    text: payload.options?.x_axis_label,
+                    color: '#d1d5db',
+                    font: {size: 13, weight: '500'}
+                },
+                grid: { color: '#21204b', drawBorder: false },
+                ticks: { color: '#9ca3af', font: {size: 12} }
+            };
+            
+            chartOptions.scales.y = {
+                title: {
+                    display: !!payload.options?.y_axis_label,
+                    text: payload.options?.y_axis_label,
+                    color: '#d1d5db',
+                    font: {size: 13, weight: '500'}
+                },
+                beginAtZero: true,
+                grid: { color: '#21204b', drawBorder: false },
+                ticks: {
+                    color: '#9ca3af',
+                    font: {size: 12},
+                    callback: function(value) {
+                        if (value >= 1000000) return (value / 1000000) + 'M';
+                        if (value >= 1000) return (value / 1000) + 'K';
+                        return value;
+                    }
+                }
+            };
+        }
+        
+        // Apply custom tooltip configuration if provided
+        if (payload.options?.tooltip) {
+            Object.assign(chartOptions.plugins.tooltip, payload.options.tooltip);
+            
+            // Handle tooltip callbacks for custom formatting
+            if (payload.options.tooltip.callbacks) {
+                chartOptions.plugins.tooltip.callbacks = {};
+                
+                Object.entries(payload.options.tooltip.callbacks).forEach(([callbackName, template]) => {
+                    chartOptions.plugins.tooltip.callbacks[callbackName] = function(context) {
+                        let result = template;
+                        
+                        // Replace placeholders with actual values
+                        if (context.raw !== undefined) {
+                            result = result.replace(/\$\{value\}/g, context.raw);
+                        }
+                        if (context.label !== undefined) {
+                            result = result.replace(/\$\{label\}/g, context.label);
+                        }
+                        if (context.dataset && context.dataset.label !== undefined) {
+                            result = result.replace(/\$\{dataset\}/g, context.dataset.label);
+                        }
+                        
+                        return result;
+                    };
+                });
+            }
+        }
+        
+        // Apply custom legend configuration if provided
+        if (payload.options?.legend) {
+            Object.assign(chartOptions.plugins.legend, payload.options.legend);
+        }
+        
+        // Create the chart
+        try {
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: chartTypeJS,
+                data: chartData,
+                options: chartOptions
+            });
+        } catch (error) {
+            console.error("Chart.js rendering error:", error);
+            const errorDiv = document.createElement('div');
+            errorDiv.innerHTML = marked.parse(`<h2>Graph Error</h2><p>There was an error rendering the chart. The data or options provided by the assistant might be invalid.</p><p><pre><code>${error.message}</code></pre></p>`);
+            graphOuterContainer.innerHTML = '';
+            graphOuterContainer.appendChild(errorDiv);
+        }
+        
+        return graphOuterContainer;
+    });
+}
 
     function connectWebSocket() {
         const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";

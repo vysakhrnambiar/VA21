@@ -153,21 +153,22 @@ TOOL_GET_DTC_KB = {
     }
 }
 
+# PASTE THIS ENTIRE BLOCK TO REPLACE THE OLD TOOL_DISPLAY_ON_INTERFACE
 TOOL_DISPLAY_ON_INTERFACE = {
     "type": "function",
     "name": DISPLAY_ON_INTERFACE_TOOL_NAME,
     "description": (
         "Sends structured data to a connected web interface for visual display. "
         "Use this tool when a visual representation (text, markdown, or graph) would enhance the user's understanding. "
-        "The web interface can display markdown (including tables), and various chart types (bar, line, pie)."
+        "The web interface can display markdown (including tables), and various chart types (bar, line, pie, doughnut, radar, mixed)."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "display_type": {
                 "type": "string",
-                "enum": ["markdown", "graph_bar", "graph_line", "graph_pie"],
-                "description": "The type of content to display. 'markdown' for text, lists, and tables. 'graph_bar', 'graph_line', or 'graph_pie' for charts."
+                "enum": ["markdown", "graph_bar", "graph_line", "graph_pie", "graph_doughnut", "graph_radar", "graph_polar", "graph_scatter", "graph_bubble", "graph_mixed"],
+                "description": "The type of content to display. 'markdown' for text, lists, and tables. Chart types include 'graph_bar', 'graph_line', 'graph_pie' and others. Use 'graph_mixed' to combine different chart types in one visualization."
             },
             "title": {
                 "type": "string",
@@ -192,7 +193,17 @@ TOOL_DISPLAY_ON_INTERFACE = {
                             "type": "object",
                             "properties": {
                                 "label": {"type": "string", "description": "Name of this dataset (e.g., 'Sales Q1', 'Temperature')."},
-                                "values": {"type": "array", "items": {"type": "number"}, "description": "Array of numerical data points corresponding to 'labels'."}
+                                "values": {"type": "array", "items": {"type": "number"}, "description": "Array of numerical data points corresponding to 'labels'."},
+                                "chartType": {"type": "string", "description": "For 'graph_mixed' display_type: Specifies the chart type for this specific dataset ('bar', 'line', etc.)."},
+                                "backgroundColor": {"type": "string", "description": "Background color for bars/points. Can be a single color or array of colors for individual data points."},
+                                "borderColor": {"type": "string", "description": "Border color for the dataset. Can be a single color or array of colors."},
+                                "borderWidth": {"type": "number", "description": "Width of borders in pixels."},
+                                "fill": {"type": "boolean", "description": "For line charts: whether to fill area under the line."},
+                                "tension": {"type": "number", "description": "For line charts: line tension between 0 (straight) and 1 (curved)."},
+                                "pointStyle": {"type": "string", "description": "Style of points ('circle', 'triangle', 'rect', 'star', etc.)."},
+                                "pointRadius": {"type": "number", "description": "Size of points in pixels."},
+                                "yAxisID": {"type": "string", "description": "ID of y-axis to use for this dataset (for multiple axes)."},
+                                "stack": {"type": "string", "description": "Stack group identifier for stacked charts."}
                             },
                             "required": ["label", "values"]
                         },
@@ -201,17 +212,39 @@ TOOL_DISPLAY_ON_INTERFACE = {
                     "options": {
                         "type": "object",
                         "properties": {
-                            "animated": {"type": "boolean", "description": "Suggest if the graph should be animated (if supported by the frontend). Default: true."},
-                            "x_axis_label": {"type": "string", "description": "Optional label for the X-axis of bar or line charts."},
-                            "y_axis_label": {"type": "string", "description": "Optional label for the Y-axis of bar or line charts."}
+                            "animated": {"type": "boolean", "description": "Whether the graph should be animated. Default: true."},
+                            "x_axis_label": {"type": "string", "description": "Label for the X-axis of bar or line charts."},
+                            "y_axis_label": {"type": "string", "description": "Label for the Y-axis of bar or line charts."},
+                            "tooltip": {
+                                "type": "object",
+                                "description": "Tooltip configuration options.",
+                                "properties": {
+                                    "mode": {"type": "string", "description": "Tooltip interaction mode ('index', 'point', 'nearest', etc.)."},
+                                    "intersect": {"type": "boolean", "description": "If true, tooltip requires the mouse to intersect with the item."},
+                                    "callbacks": {"type": "object", "description": "Custom tooltip formatting. Use '${value}', '${label}', '${dataset}' as placeholders."}
+                                }
+                            },
+                            "legend": {
+                                "type": "object",
+                                "description": "Legend configuration options.",
+                                "properties": {
+                                    "display": {"type": "boolean", "description": "Whether to show the legend."},
+                                    "position": {"type": "string", "description": "Legend position ('top', 'left', 'bottom', 'right')."}
+                                }
+                            },
+                            "scales": {
+                                "type": "object",
+                                "description": "Advanced scales configuration. Object with axis IDs as keys."
+                            }
                         },
                         "description": "Optional: General display options or hints for the frontend, like animation or axis labels for graphs."
                     }
                 },
                 "description_detailed_examples": ( 
                     "Example for 'markdown': data: { 'content': '# Report Title\\n- Point 1\\n- Point 2\\n| Col A | Col B |\\n|---|---|\\n| 1 | 2 |' }\n"
-                    "Example for 'graph_bar': data: { 'labels': ['Jan', 'Feb'], 'datasets': [{'label': 'Revenue', 'values': [100, 150]}], 'options': {'x_axis_label': 'Month'} }\n"
-                    "Example for 'graph_pie': data: { 'labels': ['Slice A', 'Slice B'], 'datasets': [{'label': 'Distribution', 'values': [60, 40]}] }"
+                    "Example for 'graph_bar': data: { 'labels': ['Jan', 'Feb'], 'datasets': [{'label': 'Values', 'values': [100, 150]}], 'options': {'x_axis_label': 'Month'} }\n"
+                    "Example for 'graph_pie': data: { 'labels': ['Slice A', 'Slice B'], 'datasets': [{'label': 'Distribution', 'values': [60, 40]}] }\n"
+                    "Example for 'graph_mixed': data: { 'labels': ['Jan', 'Feb'], 'datasets': [{'label': 'Metric A', 'values': [100, 150], 'chartType': 'line'}, {'label': 'Metric B', 'values': [20, 30], 'chartType': 'bar'}] }"
                 )
             }
         },

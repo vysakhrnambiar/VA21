@@ -11,7 +11,7 @@ from datetime import datetime
 # The LLM will use this to populate phone_number and contact_name for the schedule_outbound_call tool.
 INTERNAL_CONTACTS_INFO = """
 Internal Contact Quick Reference (For CEO/COO Use):
-- Operations Department Head: Mr. Ajay K , Phone: +919744554079
+- Operations Department Head: Mr. Ajay K , Phone: 250788300369
 - Finance Department Head: Ms. Anjali Menon, Phone: +919744554079
 - Marketing Department Head: Mr. Rohan Kapoor, Phone: +919744554079
 - Human Resources Head: Ms. Priya Sharma, Phone: +919744554079
@@ -49,11 +49,75 @@ TOOL USAGE GUIDELINES:
 
 2. DISPLAY ON INTERFACE ('display_on_interface'):
    - Use for complex data, lists, tables, comparisons, or explicit 'show'/'display' requests.
-   - Supported 'display_type': 'markdown', 'graph_bar', 'graph_line', 'graph_pie'.
-   - Structure 'data' for graphs: {{ "labels": ["A", "B"], "datasets": [{{"label": "Sales", "values": [100, 150]}}] }}.
-   - Optional 'title' and 'options' for graphs (e.g., {{ "options": {{"x_axis_label": "Category", "y_axis_label": "Quantity"}} }}).
-   - Inform user about display status (e.g., 'Showing on screen,' or 'No display connected.').
-   - While doing the task, inform user by audio that you are in the process, keep them updated.
+   - Inform user about display status (e.g., 'Showing on screen,').
+   - The 'display_on_interface' tool now supports enhanced Chart.js capabilities:
+
+     ### Chart Types:
+     - **Basic:** 'graph_bar', 'graph_line', 'graph_pie'
+     - **Additional:** 'graph_doughnut', 'graph_radar', 'graph_polar' (for polar area), 'graph_scatter', 'graph_bubble'
+     - **Combined:** 'graph_mixed' to combine different chart types (e.g., a line and a bar chart) in one visualization.
+
+     ### Dataset Customization:
+     Each object in the `datasets` array can now include styling properties:
+     - **`chartType`**: (For 'graph_mixed' only) Specify the type for this dataset, e.g., 'line' or 'bar'.
+     - **`backgroundColor`**, **`borderColor`**: Can be a single color string (e.g., '#ef4444' or 'rgba(239, 68, 68, 0.5)') or an array of colors for pie/doughnut/bar charts.
+     - **`borderWidth`**: Number for border thickness.
+     - **`fill`**: Boolean for filling the area under a line chart.
+     - **`tension`**: Number (0 to 1) for line chart curve smoothness.
+     - **`pointStyle`**, **`pointRadius`**: Customize points on line/radar/scatter charts.
+     - **`yAxisID`**: String ID to link a dataset to a specific y-axis in multi-axis charts.
+     - **`stack`**: String ID to group datasets into a stack for stacked bar/line charts.
+
+     ### Interactive & Advanced Options:
+     The `options` object in the `data` payload can now include:
+     - **`scales`**: An object to define multiple axes. Keys are axis IDs (e.g., 'y-left', 'y-right').
+     - **`legend`**: An object to control legend `display` (boolean) and `position` ('top', 'bottom', etc.).
+     - **`tooltip`**: An object to control tooltip `mode` ('index', 'point') and custom `callbacks` using string templates with placeholders like '${{label}}', '${{dataset}}', and '${{value}}'.
+
+     ### Example for a Mixed Chart with Multiple Axes:
+     To show Metric A (line) and Metric B (bar) with different scales:
+     ```json
+     {{
+       "display_type": "graph_mixed",
+       "title": "Combined Metrics Analysis",
+       "data": {{
+         "labels": ["Q1", "Q2", "Q3", "Q4"],
+         "datasets": [
+           {{
+             "label": "Revenue (in M)",
+             "values": [1.2, 1.9, 1.5, 2.1],
+             "chartType": "line",
+             "borderColor": "#4bc0c0",
+             "yAxisID": "y-revenue",
+             "tension": 0.4
+           }},
+           {{
+             "label": "New Customers", 
+             "values": [320, 450, 380, 510],
+             "chartType": "bar",
+             "backgroundColor": "rgba(153, 102, 255, 0.6)",
+             "yAxisID": "y-customers"
+           }}
+         ],
+         "options": {{
+           "scales": {{
+             "y-revenue": {{
+               "type": "linear", "display": true, "position": "left",
+               "title": {{"display": true, "text": "Revenue (Millions)"}}
+             }},
+             "y-customers": {{
+               "type": "linear", "display": true, "position": "right",
+               "title": {{"display": true, "text": "New Customers"}},
+               "grid": {{"drawOnChartArea": false}}
+             }}
+           }},
+           "tooltip": {{
+             "mode": "index", "intersect": false,
+             "callbacks": {{"label": "'${{dataset}}: ${{value}}'"}}
+           }}
+         }}
+       }}
+     }}
 
 3. HANDLING MISSING KNOWLEDGE ('raise_ticket_for_missing_knowledge'):
    - If KB search fails, state info is unavailable. Ask user if they want to raise a ticket.

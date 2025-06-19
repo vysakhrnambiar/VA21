@@ -239,7 +239,7 @@ class OpenAISpeechClient:
             "type": "connection_status", # Message type for frontend JS to recognize
             "status": { # Nested status for clarity
                 "connection": "connected",
-                "message": "Agent connected to OpenAI."
+                "message": "Agent connected to  LLM."
             }
         }
         self._notify_frontend(payload)
