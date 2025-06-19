@@ -311,12 +311,12 @@ def handle_schedule_outbound_call(phone_number: str, contact_name: str, call_obj
     try:
         cursor = conn.cursor()
         insert_sql = """
-            INSERT INTO scheduled_calls 
-            (phone_number, contact_name, initial_call_objective_description, current_call_objective_description, overall_status, max_retries, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'PENDING', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO scheduled_calls
+            (phone_number, contact_name, initial_call_objective_description, current_call_objective_description, overall_status, max_retries, created_at, updated_at, company_name_for_agent)
+            VALUES (?, ?, ?, ?, 'PENDING', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
         """
         # Using initial and current objective same at creation
-        params = (phone_number, contact_name, call_objective, call_objective, DEFAULT_MAX_RETRIES)
+        params = (phone_number, contact_name, call_objective, call_objective, DEFAULT_MAX_RETRIES, "DTC")
         cursor.execute(insert_sql, params)
         conn.commit()
         job_id = cursor.lastrowid

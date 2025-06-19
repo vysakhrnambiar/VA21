@@ -458,7 +458,26 @@ def db_monitor_thread_func(shutdown_event: threading.Event, openai_client_ref=No
                             announcement_thread.start()
                             log(f"DB_MONITOR: Started TTS announcement thread for job ID {job['id']}")
                         
-                        # DO NOT update main_agent_informed_user here. openai_client will do it after LLM priming.
+                        # Update main_agent_informed_user flag after two notifications
+                        # Get current presentation count from openai_client_ref if available
+                        presentation_count = 0
+                        if hasattr(openai_client_ref, 'call_update_presentation_count'):
+                            presentation_count = openai_client_ref.call_update_presentation_count.get(job['id'], 0)
+                            # Increment the counter for this job
+                            openai_client_ref.call_update_presentation_count[job['id']] = presentation_count + 1
+                            log(f"DB_MONITOR: Job {job['id']} notification count: {presentation_count + 1}")
+                        
+                        # Mark as informed after second presentation
+                        if presentation_count + 1 >= 2:
+                            try:
+                                cursor.execute(
+                                    "UPDATE scheduled_calls SET main_agent_informed_user = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                    (job['id'],)
+                                )
+                                conn.commit()
+                                log(f"DB_MONITOR: Marked job {job['id']} as informed after {presentation_count + 1} presentations")
+                            except sqlite3.Error as e_update:
+                                log(f"DB_MONITOR: Error updating job {job['id']} status: {e_update}", logging.ERROR)
                     else:
                         log(f"DB_MONITOR: Failed to notify frontend for job ID {job['id']}. Status: {response.status_code}, Resp: {response.text[:100]}", logging.WARNING)
                 except requests.exceptions.RequestException as e_req:

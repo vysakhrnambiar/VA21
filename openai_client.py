@@ -56,6 +56,9 @@ class OpenAISpeechClient:
         self.client_audio_chunk_duration_ms = self.config.get("CHUNK_MS", 30)
         self.client_initiated_truncated_item_ids = set()
         
+        # Track how many times we've presented each call update
+        self.call_update_presentation_count = {}  # job_id -> count of presentations
+        
         # Audio logging counters
         self.audio_received_counter = 0
         self.audio_sent_counter = 0
@@ -265,23 +268,40 @@ class OpenAISpeechClient:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, contact_name, overall_status, final_summary_for_main_agent 
-                FROM scheduled_calls 
-                WHERE main_agent_informed_user = 0 
+                SELECT id, contact_name, overall_status, final_summary_for_main_agent
+                FROM scheduled_calls
+                WHERE main_agent_informed_user = 0
                   AND overall_status IN ('COMPLETED_SUCCESS', 'FAILED_MAX_RETRIES', 'COMPLETED_OBJECTIVE_NOT_MET', 'FAILED_PERMANENT_ERROR')
                 ORDER BY updated_at DESC
-                LIMIT 5 
+                LIMIT 5
             """)
             pending_updates = cursor.fetchall()
             if pending_updates:
                 updates_list = []
                 for job in pending_updates:
                     job_id = job['id']
+                    
+                    # We only need to track presentations - DB updates happen in main.py
+                    # Skip updates that have already been presented
+                    current_count = self.call_update_presentation_count.get(job_id, 0)
+                    if current_count >= 2:
+                        # Skip - already presented twice
+                        continue
+                    
+                    # Increment presentation counter for this call update
+                    self.call_update_presentation_count[job_id] = current_count + 1
+                    self.log(f"Call update for job {job_id} presentation count: {current_count + 1}")
+                    
                     summary = job['final_summary_for_main_agent'] if job['final_summary_for_main_agent'] else f"finished with status {job['overall_status']}."
                     updates_list.append(f"Call to {job['contact_name']} (Job ID: {job_id}): {summary}")
                     processed_job_ids.append(job_id)
-                updates_text = "Pending Call Task Updates:\n- " + "\n- ".join(updates_list) + "\n"
-                self.log(f"Fetched {len(pending_updates)} pending call updates for context priming.")
+                
+                if updates_list:
+                    updates_text = "Pending Call Task Updates:\n- " + "\n- ".join(updates_list) + "\n"
+                    self.log(f"Fetched {len(updates_list)} pending call updates for context priming.")
+                    
+                # We're now handling the database update in main.py's DB monitor thread
+                # No need to mark as informed here anymore
         except sqlite3.Error as e:
             self.log(f"ERROR fetching pending call updates from '{SCHEDULED_CALLS_DB_PATH}': {e}")
         finally:
@@ -444,10 +464,12 @@ class OpenAISpeechClient:
         try:
             self.ws_app.send(json.dumps(session_config))
             self.log(f"Client: Session config sent. Instructions length: {len(effective_instructions)} chars.")
-            if informed_job_ids:
-                self._mark_call_updates_as_informed(informed_job_ids)
+            # Do not mark as informed immediately - we'll do this after user interaction
+            # This allows the updates to remain visible until explicitly acknowledged
+            # if informed_job_ids:
+            #     self._mark_call_updates_as_informed(informed_job_ids)
         except Exception as e_send_session:
-            self.log(f"ERROR sending session.update or marking updates: {e_send_session}")
+            self.log(f"ERROR sending session.update: {e_send_session}")
             # If this fails, the connection might be unstable already. Reconnect loop will handle.
 
 
