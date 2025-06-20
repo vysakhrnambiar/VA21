@@ -12,7 +12,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let hideBannerTimeout = null;
 
     // New state variable to track backend agent's connection status
-    let agentBackendConnected = false; 
+    let agentBackendConnected = false;
+
+    // Thinking popup state
+    let thinkingPopup = null;
+    let thinkingContent = null;
+    let thinkingBuffer = '';
+    let thinkingBufferTimeout = null;
 
     const IDLE_STATE_TIMEOUT_MS = 5 * 60 * 1000;
     const RECONNECT_DELAY_MS = 5000;
@@ -89,6 +95,123 @@ document.addEventListener('DOMContentLoaded', () => {
                 callUpdateNotificationArea.hideTimeout = null;
             }
         }
+    }
+
+    // Thinking popup functions
+    function createThinkingPopup() {
+        if (thinkingPopup) return; // Already exists
+        
+        // Create overlay
+        thinkingPopup = document.createElement('div');
+        thinkingPopup.id = 'thinking-popup-overlay';
+        thinkingPopup.className = 'thinking-popup-overlay';
+        
+        // Create popup container
+        const popupContainer = document.createElement('div');
+        popupContainer.className = 'thinking-popup-container';
+        
+        // Create header
+        const header = document.createElement('div');
+        header.className = 'thinking-popup-header';
+        header.innerHTML = '🤔 <span>Claude is thinking...</span>';
+        
+        // Create content area
+        thinkingContent = document.createElement('div');
+        thinkingContent.className = 'thinking-popup-content';
+        thinkingContent.innerHTML = '<div class="thinking-dots">•••</div>';
+        
+        // Create footer
+        const footer = document.createElement('div');
+        footer.className = 'thinking-popup-footer';
+        footer.textContent = 'Please wait while I process your request';
+        
+        // Assemble popup
+        popupContainer.appendChild(header);
+        popupContainer.appendChild(thinkingContent);
+        popupContainer.appendChild(footer);
+        thinkingPopup.appendChild(popupContainer);
+        
+        document.body.appendChild(thinkingPopup);
+    }
+
+    function showThinkingPopup() {
+        createThinkingPopup();
+        console.log("Showing thinking popup");
+        thinkingBuffer = '';
+        thinkingPopup.classList.add('visible');
+        
+        // Start pulsing animation for dots
+        const dots = thinkingContent.querySelector('.thinking-dots');
+        if (dots) {
+            dots.classList.add('pulsing');
+        }
+    }
+
+    function updateThinkingContent(content) {
+        if (!thinkingPopup || !thinkingContent) return;
+        
+        // Buffer content to avoid too frequent updates
+        thinkingBuffer += content;
+        
+        // Clear existing timeout
+        if (thinkingBufferTimeout) {
+            clearTimeout(thinkingBufferTimeout);
+        }
+        
+        // Update content after a small delay (batching)
+        thinkingBufferTimeout = setTimeout(() => {
+            // Replace dots with actual thinking content
+            const dotsElement = thinkingContent.querySelector('.thinking-dots');
+            if (dotsElement) {
+                dotsElement.remove();
+            }
+            
+            // Create or update thinking text element
+            let thinkingText = thinkingContent.querySelector('.thinking-text');
+            if (!thinkingText) {
+                thinkingText = document.createElement('div');
+                thinkingText.className = 'thinking-text';
+                thinkingContent.appendChild(thinkingText);
+            }
+            
+            // Process the thinking content for better display
+            const processedContent = thinkingBuffer
+                .replace(/\n/g, '<br>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>');
+            
+            thinkingText.innerHTML = processedContent;
+            
+            // Auto-scroll to bottom
+            thinkingContent.scrollTop = thinkingContent.scrollHeight;
+            
+            console.log("Updated thinking content:", content.length, "chars");
+        }, 100); // 100ms batching delay
+    }
+
+    function hideThinkingPopup() {
+        if (!thinkingPopup) return;
+        
+        console.log("Hiding thinking popup");
+        
+        // Clear any pending buffer updates
+        if (thinkingBufferTimeout) {
+            clearTimeout(thinkingBufferTimeout);
+            thinkingBufferTimeout = null;
+        }
+        
+        // Add fade-out animation
+        thinkingPopup.classList.add('fade-out');
+        
+        // Remove after animation completes
+        setTimeout(() => {
+            if (thinkingPopup && thinkingPopup.parentNode) {
+                thinkingPopup.parentNode.removeChild(thinkingPopup);
+            }
+            thinkingPopup = null;
+            thinkingContent = null;
+            thinkingBuffer = '';
+        }, 300); // Match CSS animation duration
     }
 
     function clearAllDynamicContent(withAnimation = false) {
@@ -514,10 +637,28 @@ function renderGraph(type, payload) {
                     if (payload && payload.contact_name && payload.status_summary) {
                         showCallUpdateNotification(payload.contact_name, payload.status_summary, payload.job_id);
                     }
-                    return; 
+                    return;
+                } else if (type === 'thinking_start') {
+                    showThinkingPopup();
+                    return;
+                } else if (type === 'thinking_delta') {
+                    if (payload && payload.content) {
+                        updateThinkingContent(payload.content);
+                    }
+                    return;
+                } else if (type === 'thinking_end') {
+                    hideThinkingPopup();
+                    return;
+                } else if (type === 'thinking_error') {
+                    hideThinkingPopup();
+                    if (payload && payload.error) {
+                        console.error("Thinking error:", payload.error);
+                        showConnectionStatusBanner(`Thinking process error: ${payload.error}`, "error");
+                    }
+                    return;
                 }
                 
-                if (agentBackendConnected) { 
+                if (agentBackendConnected) {
                     if (!messageData.payload && (type === 'markdown' || type.startsWith('graph_') || type === 'html')) { 
                         console.error("Invalid message: 'payload' missing for display type:", messageData);
                         return; 

@@ -64,6 +64,11 @@ APP_CONFIG = {
     "FASTAPI_UI_STATUS_UPDATE_URL": os.getenv("FASTAPI_UI_STATUS_UPDATE_URL", "http://localhost:8001/api/ui_status_update"),
     "FASTAPI_NOTIFY_CALL_UPDATE_URL": os.getenv("FASTAPI_NOTIFY_CALL_UPDATE_URL", "http://localhost:8001/api/notify_call_update_available"),
     "SCHEDULED_CALLS_DB_PATH": os.path.join(os.path.dirname(os.path.abspath(__file__)), "scheduled_calls.db"),
+    # --- Anthropic Configuration for HTML Generation with Thinking Tokens ---
+    "PREFERRED_HTML_GENERATOR": os.getenv("PREFERRED_HTML_GENERATOR", "gemini"),
+    "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
+    "ANTHROPIC_MODEL_ID": os.getenv("ANTHROPIC_MODEL_ID", "claude-3-5-sonnet-20241022"),
+    "FASTAPI_THINKING_STREAM_URL": os.getenv("FASTAPI_THINKING_STREAM_URL"),
 }
 
 

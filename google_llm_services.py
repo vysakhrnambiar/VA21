@@ -8,6 +8,18 @@ import google.generativeai as genai
 from google.generativeai.types import GenerationConfig # Tool removed
 from datetime import datetime
 import logging
+import requests
+from typing import Optional
+
+# NEW: Import for thinking tokens (separate from existing library)
+try:
+    from google import genai as new_genai
+    from google.genai import types as new_types
+    NEW_GENAI_AVAILABLE = True
+except ImportError:
+    NEW_GENAI_AVAILABLE = False
+    new_genai = None
+    new_types = None
 
 LOG_FILE_NAME = "google_services.log"
 logger = logging.getLogger("GoogleLLMServiceLogger")
@@ -124,6 +136,108 @@ def get_gemini_response(
     except Exception as e:
         logger.error(f"Exception during Gemini API call: {e}", exc_info=True)
         return f"Error: Could not get a response from Google AI service. Detail: {str(e)}"
+
+def get_gemini_response_with_thinking_stream(
+    user_prompt_text: str,
+    system_instruction_text: str,
+    model_name: str = DEFAULT_GEMINI_MODEL,
+    thinking_callback_url: Optional[str] = None
+) -> str:
+    """
+    NEW: Gemini response with real thinking tokens using the new google.genai library.
+    This does NOT break the existing get_gemini_response function.
+    """
+    if not NEW_GENAI_AVAILABLE:
+        logger.warning("New Google GenAI library not available for thinking tokens. Falling back to regular response.")
+        return get_gemini_response(user_prompt_text, system_instruction_text, False, model_name)
+    
+    if not GOOGLE_API_KEY:
+        logger.error("GOOGLE_API_KEY not available for thinking stream.")
+        return "Error: Google AI service is not available due to missing API key."
+
+    try:
+        logger.info(f"Using NEW GenAI library for thinking stream with model: {model_name}")
+        
+        # Send thinking_start event
+        if thinking_callback_url:
+            try:
+                logger.info(f"Sending thinking_start to {thinking_callback_url}")
+                response = requests.post(thinking_callback_url, json={
+                    "type": "thinking_start",
+                    "payload": {"message": "Gemini is analyzing your request..."}
+                }, timeout=1)
+                logger.info(f"thinking_start response: {response.status_code}")
+            except Exception as e:
+                logger.warning(f"Failed to send thinking_start: {e}")
+        
+        # Create client with new library
+        client = new_genai.Client(api_key=GOOGLE_API_KEY)
+        
+        # Prepare full prompt with system instruction
+        full_prompt = f"{system_instruction_text}\n\n{user_prompt_text}" if system_instruction_text else user_prompt_text
+        
+        thoughts = ""
+        answer = ""
+        
+        # Stream with thinking enabled
+        for chunk in client.models.generate_content_stream(
+            model=model_name,
+            contents=full_prompt,
+            config=new_types.GenerateContentConfig(
+                thinking_config=new_types.ThinkingConfig(
+                    include_thoughts=True
+                )
+            )
+        ):
+            for part in chunk.candidates[0].content.parts:
+                if not part.text:
+                    continue
+                elif part.thought:
+                    # This is thinking content
+                    thoughts += part.text
+                    
+                    # Send thinking delta to frontend
+                    if thinking_callback_url:
+                        try:
+                            logger.info(f"Sending Gemini thinking_delta: {len(part.text)} chars")
+                            response = requests.post(thinking_callback_url, json={
+                                "type": "thinking_delta",
+                                "payload": {"content": part.text}
+                            }, timeout=1)
+                            logger.info(f"thinking_delta response: {response.status_code}")
+                        except Exception as e:
+                            logger.warning(f"Failed to send thinking_delta: {e}")
+                else:
+                    # This is final answer content
+                    answer += part.text
+        
+        # Send thinking_end event
+        if thinking_callback_url:
+            try:
+                requests.post(thinking_callback_url, json={
+                    "type": "thinking_end",
+                    "payload": {"message": "Gemini thinking complete, generating final response..."}
+                }, timeout=1)
+            except Exception as e:
+                logger.warning(f"Failed to send thinking_end: {e}")
+        
+        logger.info(f"Gemini thinking stream completed. Thoughts: {len(thoughts)} chars, Answer: {len(answer)} chars")
+        return answer.strip() if answer else "Error: No response content received"
+        
+    except Exception as e:
+        logger.error(f"Exception during Gemini thinking stream: {e}", exc_info=True)
+        
+        # Send error to frontend
+        if thinking_callback_url:
+            try:
+                requests.post(thinking_callback_url, json={
+                    "type": "thinking_error",
+                    "payload": {"error": f"Gemini thinking error: {str(e)}"}
+                }, timeout=1)
+            except:
+                pass
+        
+        return f"Error: Could not get thinking response from Gemini. Detail: {str(e)}"
 
 # --- SIMPLIFIED Test Section ---
 # --- ULTRA-SIMPLIFIED Test Section (Focus: Grounding with Default Model) ---

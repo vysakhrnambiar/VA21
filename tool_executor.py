@@ -55,12 +55,14 @@ OPENAI_API_KEY_FOR_TOOL_SUMMARIZER = os.getenv("OPENAI_API_KEY") # Get key direc
 
 # Import the new Google services module
 try:
-    from google_llm_services import get_gemini_response, GOOGLE_API_KEY
+    from google_llm_services import get_gemini_response, get_gemini_response_with_thinking_stream, GOOGLE_API_KEY
     GOOGLE_SERVICES_AVAILABLE = bool(GOOGLE_API_KEY)
 except ImportError:
     print("[TOOL_EXECUTOR] WARNING: google_llm_services.py not found or GOOGLE_API_KEY missing. Google-based tools will not function.")
     GOOGLE_SERVICES_AVAILABLE = False
     def get_gemini_response(user_prompt_text: str, system_instruction_text: str, use_google_search_tool: bool = False, model_name: str = "") -> str:
+        return "Error: Google AI services are not available (module load failure)."
+    def get_gemini_response_with_thinking_stream(user_prompt_text: str, system_instruction_text: str, model_name: str = "", thinking_callback_url: str = None) -> str:
         return "Error: Google AI services are not available (module load failure)."
 
 # --- Knowledge Base File Paths & DB Path ---
@@ -95,15 +97,30 @@ def get_tool_db_connection():
         return None
 
 def _load_kb_content(file_path: str) -> str:
+    _tool_log(f"Attempting to load KB file: {file_path}")
+    _tool_log(f"KB folder path: {KB_FOLDER_PATH}")
+    _tool_log(f"Current working directory: {os.getcwd()}")
+    _tool_log(f"Full absolute file path: {os.path.abspath(file_path)}")
+    
     try:
         if not os.path.exists(KB_FOLDER_PATH):
             _tool_log(f"ERROR: Knowledge base directory not found: {KB_FOLDER_PATH}")
             return f"Error: KB_DIRECTORY_MISSING"
+        else:
+            _tool_log(f"SUCCESS: KB directory exists: {KB_FOLDER_PATH}")
+            
         if not os.path.exists(file_path):
             _tool_log(f"ERROR: Knowledge base file not found: {file_path}")
+            _tool_log(f"Files in KB directory: {os.listdir(KB_FOLDER_PATH) if os.path.exists(KB_FOLDER_PATH) else 'N/A'}")
             return f"Error: KB_FILE_NOT_FOUND ({os.path.basename(file_path)})"
+        else:
+            _tool_log(f"SUCCESS: KB file exists: {file_path}")
+            
         with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
+            content = f.read()
+            _tool_log(f"SUCCESS: KB file loaded. Content size: {len(content)} characters, {len(content.splitlines())} lines")
+            _tool_log(f"First 100 characters: {content[:100]}...")
+            return content
     except Exception as e:
         _tool_log(f"ERROR: Could not read KB file {file_path}: {e}")
         return f"Error: KB_READ_ERROR ({os.path.basename(file_path)})"
@@ -650,7 +667,8 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
         # Return simple HTML error for frontend to render
         return "<!DOCTYPE html><html><head><title>Config Error</title></head><body><p>Error: Internal tool configuration missing. Cannot generate visualization.</p></body></html>"
     preferred_html_generator = config.get("PREFERRED_HTML_GENERATOR", "gemini").lower()
-    anthropic_model_id = config.get("ANTHROPIC_MODEL_ID", "claude-3-opus-20240229")
+    anthropic_model_id = config.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
+    print(f"DEBUG CONFIG: {config}"); print(f"DEBUG: preferred='{preferred_html_generator}', available={ANTHROPIC_SERVICES_AVAILABLE}") 
 
   
     fastapi_url = config.get("FASTAPI_DISPLAY_API_URL")
@@ -766,7 +784,29 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
         *   If adding minor custom JavaScript for UI (e.g., simple tab switching, accordions for complex data), ensure it's minimal, efficient, and inline.
         *   Subtle on-load animations for elements (e.g., cards fading in) can be achieved with CSS transitions/animations if desired. Keep them brief and professional.
 
-        IMPORTANT: You MUST ONLY use the data provided between the KNOWLEDGE BASE DATA markers. Do NOT add or generate any additional data points that are not explicitly present in the provided knowledge base. If the any particular field requested does not have the data you will mention that at the bottom of the html page.  
+        **Chart Sizing & Scaling Guidelines:**
+        1.  **Optimal Chart Dimensions:**
+        *   Set chart containers to reasonable heights (max 400px for single charts, max 300px each for multiple charts in the same view).
+        *   Use responsive aspect ratios that work well within the 960px max width constraint - prefer wider charts over tall ones.
+        *   Ensure charts are never excessively tall relative to their width unless specifically needed for data clarity.
+        *   For multiple charts on one page, maintain consistent sizing and spacing between them.
+        2.  **Data Scaling & Mixed Metrics Handling:**
+        *   For vastly different data scales (e.g., orders in hundreds vs revenue in thousands/millions), use dual-axis charts with clearly labeled left and right Y-axes.
+        *   Apply appropriate unit formatting in labels and tooltips (K for thousands, M for millions, B for billions).
+        *   When combining different metrics, consider percentage-based comparisons, indexed scaling to 100, or separate normalized charts.
+        *   Use logarithmic scales only when data spans multiple orders of magnitude and linear scale would be unreadable.
+        *   For time-series data with mixed scales, consider separate but aligned charts rather than forcing incompatible metrics onto one chart.
+        3.  **Visual Balance & Chart Readability:**
+        *   Ensure all chart elements (legends, labels, titles, tick marks) are proportionally sized and don't overwhelm the actual data visualization.
+        *   Scale text sizes appropriately for the 960px container: chart titles 16-18px, axis labels 12-14px, tooltips 11-13px.
+        *   Maintain adequate spacing between chart elements to prevent visual clutter and ensure readability.
+        *   Use consistent color schemes across multiple charts for related data types, but ensure sufficient contrast between different data series.
+        4.  **Flexible Data Source Handling:**
+        *   The data source may come from knowledge bases, search results, conversation history, or user-provided information - adapt the visualization appropriately.
+        *   If working with search results or external data, focus on the key insights and structure the data logically for visualization.
+        *   For any data source, prioritize clarity and readability over cramming all available information into the display.
+
+        IMPORTANT: You MUST ONLY use the data provided between the KNOWLEDGE BASE DATA markers or other explicitly provided data sources. Do NOT add or generate any additional data points that are not explicitly present in the provided data. If any particular field requested does not have the data you will mention that at the bottom of the html page.
         *   **CRITICAL DISPLAY CONSTRAINT:** Your HTML MUST be optimized for a display area with a maximum width of 960px (centered). The main container area has horizontal margins of 160px on each side and inner padding of 20px. Design your content to look best within these constraints. All interactive elements and visualizations should be fully functional and properly sized within this 960px maximum width.
         """
 
@@ -806,25 +846,39 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
 
     try:
         if preferred_html_generator == "anthropic" and ANTHROPIC_SERVICES_AVAILABLE:
-            anthropic_model_id = config.get("ANTHROPIC_MODEL_ID", "claude-3-opus-20240229")
+            anthropic_model_id = config.get("ANTHROPIC_MODEL_ID", "claude-3-5-sonnet-20241022")
             model_used = anthropic_model_id
 
-            _tool_log(f"Using Anthropic Claude (model: {anthropic_model_id}) to generate HTML.")
-            #llm_generated_html = ""
-            generated_html_data = anthropic_svc.get_claude_html_response(
+            _tool_log(f"Using Anthropic Claude (model: {anthropic_model_id}) to generate HTML with thinking stream.")
+            
+            # Get the thinking callback URL from config
+            thinking_stream_url = config.get("FASTAPI_THINKING_STREAM_URL")
+            if not thinking_stream_url:
+                # Default to localhost if not configured
+                thinking_stream_url = "http://localhost:8001/api/thinking_stream"
+                _tool_log(f"FASTAPI_THINKING_STREAM_URL not configured, using default: {thinking_stream_url}")
+            
+            # Use the new streaming function with thinking tokens
+            generated_html_data = anthropic_svc.get_claude_html_response_with_thinking_stream(
                 user_prompt=gemini_user_prompt,# Use the same user prompt designed for Gemini
                 system_instruction=gemini_system_instruction, # Same
-                model_name=anthropic_model_id
+                model_name=anthropic_model_id,
+                thinking_callback_url=thinking_stream_url
             )
 
         elif preferred_html_generator == "gemini":  # Explicit check for Gemini
             model_used = "gemini"
-            _tool_log("Using Google Gemini to generate HTML.")
-            generated_html_data = get_gemini_response(
+            _tool_log("Using Google Gemini to generate HTML with real thinking tokens.")
+            
+            # Get the thinking callback URL for Gemini
+            thinking_stream_url = config.get("FASTAPI_THINKING_STREAM_URL")
+            
+            # Use the new Gemini thinking function
+            generated_html_data = get_gemini_response_with_thinking_stream(
                 user_prompt_text=gemini_user_prompt,
                 system_instruction_text=gemini_system_instruction,
-                use_google_search_tool=False, # This tool relies on provided KBs or general instruction following
-                model_name=DEFAULT_GEMINI_MODEL  # Or some appropriate Google model
+                model_name=DEFAULT_GEMINI_MODEL,
+                thinking_callback_url=thinking_stream_url
             )
 
         else:
@@ -835,7 +889,16 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
         generated_html_data = f"Error: Invalid PREFERRED_HTML_GENERATOR setting. Please use 'gemini' or 'anthropic. or Error in models Please check API setting,Here is Error {str(e)}'"
         llm_feedback_message = f"Sorry Model not able to generate the visuals here is the reason {str(e)}"
         
-        # We can use code here to send feedback
+        # Send thinking error to frontend if thinking stream was active
+        thinking_stream_url = config.get("FASTAPI_THINKING_STREAM_URL")
+        if thinking_stream_url:
+            try:
+                requests.post(thinking_stream_url, json={
+                    "type": "thinking_error",
+                    "payload": {"error": f"HTML generation error: {str(e)}"}
+                }, timeout=1)
+            except:
+                pass  # Don't fail the main operation if thinking stream fails
 
 
 

@@ -346,3 +346,178 @@ body {
     padding: 0 0 0 10px;
     line-height: 1;
 }
+
+/* --- Thinking Popup Styling --- */
+.thinking-popup-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(16, 15, 36, 0.85);
+    backdrop-filter: blur(8px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+}
+
+.thinking-popup-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.thinking-popup-overlay.fade-out {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.thinking-popup-container {
+    background: linear-gradient(135deg, #1f1e3d 0%, #2a2958 100%);
+    border: 1px solid #3b3a5c;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    width: 90%;
+    max-width: 480px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: thinkingPopupSlideIn 0.3s ease-out;
+}
+
+.thinking-popup-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #3b3a5c;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #e0e0ff;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.thinking-popup-header span {
+    color: #d0d0ff;
+}
+
+.thinking-popup-content {
+    flex: 1;
+    padding: 20px 24px;
+    overflow-y: auto;
+    max-height: 400px;
+    line-height: 1.6;
+    color: #c7c7d1;
+    font-size: 0.95rem;
+}
+
+.thinking-popup-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.thinking-popup-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+.thinking-popup-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.thinking-popup-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.thinking-dots {
+    text-align: center;
+    font-size: 2rem;
+    color: #818cf8;
+    font-weight: bold;
+    letter-spacing: 4px;
+}
+
+.thinking-dots.pulsing {
+    animation: thinkingDotsPulse 1.5s ease-in-out infinite;
+}
+
+.thinking-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #d0d0ff;
+    line-height: 1.7;
+    font-family: "Space Grotesk", "Noto Sans", sans-serif;
+}
+
+.thinking-text strong {
+    color: #e0e0ff;
+    font-weight: 600;
+}
+
+.thinking-text em {
+    color: #b4b4ff;
+    font-style: italic;
+}
+
+.thinking-popup-footer {
+    padding: 16px 24px 20px;
+    border-top: 1px solid #3b3a5c;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #a0aec0;
+    font-style: italic;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Animations */
+@keyframes thinkingPopupSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes thinkingDotsPulse {
+    0%, 100% {
+        opacity: 0.4;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 640px) {
+    .thinking-popup-container {
+        width: 95%;
+        max-width: none;
+        margin: 20px;
+        max-height: 80vh;
+    }
+    
+    .thinking-popup-header {
+        padding: 16px 20px 12px;
+        font-size: 1rem;
+    }
+    
+    .thinking-popup-content {
+        padding: 16px 20px;
+        font-size: 0.9rem;
+        max-height: 300px;
+    }
+    
+    .thinking-popup-footer {
+        padding: 12px 20px 16px;
+        font-size: 0.8rem;
+    }
+}

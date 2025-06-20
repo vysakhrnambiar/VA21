@@ -170,6 +170,43 @@ async def notify_call_update_available_endpoint(request: Request):
         log_server(f"Critical error processing /api/notify_call_update_available: {e}")
         return {"status": "error", "message": f"Internal server error: {str(e)}"}
 
+
+@app.post("/api/thinking_stream")
+async def thinking_stream_endpoint(request: Request):
+    """
+    Receives thinking tokens data from the Anthropic streaming service
+    and broadcasts them to all connected WebSocket clients in real-time.
+    """
+    try:
+        data = await request.json() # Expecting {"type": "thinking_start|thinking_delta|thinking_end|thinking_error", "payload": {...}}
+        log_server(f"Received POST /api/thinking_stream: Type '{data.get('type')}'")
+
+        if not isinstance(data, dict) or "type" not in data or "payload" not in data:
+            log_server("Invalid data format for /api/thinking_stream.")
+            return {"status": "error", "message": "Invalid payload format for thinking stream."}
+
+        # Validate thinking message types
+        valid_types = ["thinking_start", "thinking_delta", "thinking_end", "thinking_error"]
+        if data.get("type") not in valid_types:
+            log_server(f"Invalid thinking message type: {data.get('type')}")
+            return {"status": "error", "message": f"Invalid thinking message type. Must be one of: {valid_types}"}
+
+        sent_count = await broadcast_to_clients(data)
+        
+        if sent_count > 0:
+            return {"status": "success", "message": f"Thinking data broadcasted to {sent_count} client(s)."}
+        elif not connected_clients:
+             return {"status": "received_but_no_clients", "message": "Thinking data received, but no clients connected."}
+        else:
+            return {"status": "error", "message": "Thinking data received, but failed to broadcast."}
+            
+    except json.JSONDecodeError:
+        log_server("Error: POST /api/thinking_stream received non-JSON data.")
+        return {"status": "error", "message": "Invalid JSON payload."}
+    except Exception as e:
+        log_server(f"Critical error processing /api/thinking_stream: {e}")
+        return {"status": "error", "message": f"Internal server error: {str(e)}"}
+
 # --- Main Guard ---
 if __name__ == "__main__":
     log_server(f"Starting Uvicorn server for web_server.py on http://localhost:8001.")
