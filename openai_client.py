@@ -661,11 +661,11 @@ class OpenAISpeechClient:
             if transcript and transcript.strip():  # Only log if there's actual content
                 self.log(f"------ CONVERSATION ------\n👤 USER SAYING: \"{transcript.strip()}\"\n---------------------------")
                 # Log user's speech to conversation history
-                if self.session_id:
-                    try:
-                        log_conversation_turn(self.session_id, "user", transcript.strip())
-                    except Exception as e:
-                        self.log(f"ERROR: Failed to log user transcript to conversation history: {e}", logging.ERROR)
+                #if self.session_id:
+                #    try:
+                 #       log_conversation_turn(self.session_id, "user", transcript.strip())
+                  #  except Exception as e:
+                   #     self.log(f"ERROR: Failed to log user transcript to conversation history: {e}", logging.ERROR)
         # For other high-frequency events that we want to minimize in logs
         elif msg_type in ["response.audio_transcript.delta", "response.output.delta", "response.function_call_arguments.delta"]:
             pass  # Skip logging these entirely
