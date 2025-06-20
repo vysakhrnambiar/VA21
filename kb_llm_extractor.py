@@ -5,7 +5,7 @@ from datetime import datetime
 
 # --- Configuration ---
 # Model to use for KB content extraction
-KB_EXTRACTION_MODEL = os.getenv("KB_EXTRACTION_MODEL", "gpt-4o-mini")
+KB_EXTRACTION_MODEL = os.getenv("KB_EXTRACTION_MODEL", "gpt-4o")
 # Max tokens for the extraction model's response
 KB_EXTRACTION_MAX_TOKENS = int(os.getenv("KB_EXTRACTION_MAX_TOKENS", 1024))
 # Temperature for extraction model

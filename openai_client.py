@@ -458,7 +458,7 @@ class OpenAISpeechClient:
                 "input_audio_format": input_format_to_use, "output_audio_format": "pcm16",
                 "tools": ALL_TOOLS, "tool_choice": "auto",
                 "instructions": effective_instructions,
-                "input_audio_transcription": {"model": "whisper-1"}
+                "input_audio_transcription": {"model": "gpt-4o-transcribe", "language": "en"}
             }
         }
         try:

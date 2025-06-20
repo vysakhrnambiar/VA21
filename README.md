@@ -121,7 +121,7 @@ Create a `.env` file with the following variables:
 ```
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_REALTIME_MODEL_ID=gpt-4o
-OPENAI_VOICE=alloy
+OPENAI_VOICE=ash
 WAKE_WORD_MODEL=hey_jarvis
 WAKE_WORD_THRESHOLD=0.5
 FASTAPI_DISPLAY_API_URL=http://localhost:8001/api/display

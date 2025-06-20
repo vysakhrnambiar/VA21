@@ -3,6 +3,7 @@ import json
 import sys
 import os
 import requests # For synchronous HTTP requests
+import threading # For thread-safe busy flag management
 from datetime import datetime, date, timedelta, time, timezone # Added timezone
 
 from dateutil import parser as dateutil_parser # For flexible date string parsing
@@ -71,6 +72,10 @@ DTC_KB_FILE = os.path.join(KB_FOLDER_PATH, "dtc_kb.txt")
 DATABASE_NAME = "scheduled_calls.db"
 DB_PATH = os.path.join(BASE_DIR, DATABASE_NAME)
 DEFAULT_MAX_RETRIES = 3 # Default for new scheduled calls
+
+# HTML Generator busy state tracking
+HTML_GENERATOR_LOCK = threading.Lock()
+HTML_GENERATOR_BUSY = False
 
 # Helper for logging within this module
 def _tool_log(message):
@@ -623,9 +628,21 @@ def handle_get_conversation_history_summary(
 # Find this function definition:
 # def handle_generate_html_visualization(user_request: str, knowledge_base_source: str, title: Optional[str] = None, config: Optional[dict] = None) -> str:
 # And replace its content with:
-
 def handle_generate_html_visualization(user_request: str, knowledge_base_source: str, title: Optional[str] = None, config: Optional[dict] = None) -> str:
+    global HTML_GENERATOR_BUSY
+    
+    # Thread-safe check and update of busy flag
+    with HTML_GENERATOR_LOCK:
+        if HTML_GENERATOR_BUSY:
+            _tool_log("HTML generator is busy with another request. Returning busy message to LLM.")
+            return "I'm currently generating HTML for another request. Please try again later when the current operation is complete."
+        
+        # Set busy flag
+        HTML_GENERATOR_BUSY = True
+    
+    # Original function begins here
     _tool_log(f"Handling generate_html_visualization. Request: '{user_request[:70]}...', Source: {knowledge_base_source}, Title: {title}")
+
 
 
     if not config:
@@ -887,6 +904,11 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
     except Exception as e_display:
         _tool_log(f"ERROR: Unexpected error while trying to display generated HTML: {e_display}")
         llm_feedback_message = f"Sorry, an unexpected error occurred after generating the '{effective_title_for_page}' visualization, while trying to display it."
+    
+    # Reset the busy flag before returning
+    with HTML_GENERATOR_LOCK:
+        HTML_GENERATOR_BUSY = False
+        _tool_log("HTML generator is now available for new requests.")
     
     return llm_feedback_message
 
