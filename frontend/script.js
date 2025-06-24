@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Create header
         const header = document.createElement('div');
         header.className = 'thinking-popup-header';
-        header.innerHTML = '🤔 <span>Claude is thinking...</span>';
+        header.innerHTML = '⚡ <span>I am working on the task...</span>';
         
         // Create content area
         thinkingContent = document.createElement('div');

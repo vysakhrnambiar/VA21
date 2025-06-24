@@ -128,14 +128,14 @@ body {
     background-color: #100F24;
     overflow: hidden;
     position: relative;
-    padding: 20px 160px;
+    padding: 20px 5%; /* Responsive padding: 5% on each side = 90% content area */
 }
 
 #display-area {
     flex-grow: 1;
     min-height: 0;
     width: 100%;
-    max-width: 960px;
+    max-width: none; /* Remove the 960px constraint */
     margin: 0 auto;
     padding: 20px;
     box-sizing: border-box;
@@ -198,15 +198,31 @@ body {
     justify-content: flex-start;
 }
 
-.markdown-content, .graph-content {
+.markdown-content {
     background: transparent;
     padding: 20px;
     margin: 0 auto;
     width: 100%;
-    max-width: 95%;
+    max-width: min(1400px, 100%); /* Cap at 1400px for readability, but use full width on smaller screens */
+    max-height: calc(100vh - 140px); /* Constrain height for scrolling */
+    color: #c7c7d1;
+    overflow-y: auto; /* Enable vertical scrolling */
+    overflow-x: hidden; /* Prevent horizontal scrolling */
+    border: 1px solid #21204B;
+    border-radius: 12px;
+    flex-shrink: 1;
+    min-height: 0;
+}
+
+.graph-content {
+    background: transparent;
+    padding: 20px;
+    margin: 0 auto;
+    width: 100%;
+    max-width: min(1400px, 100%);
     max-height: 100%;
     color: #c7c7d1;
-    overflow: hidden; /* Important for internal scrolling if needed */
+    overflow: hidden;
     border: 1px solid #21204B;
     border-radius: 12px;
     flex-shrink: 1;
@@ -228,6 +244,53 @@ body {
 /* Markdown specific styles - slightly reduced font sizes */
 .markdown-content h1, .markdown-content h2, .markdown-content h3 {
     margin-top: 0.5em; margin-bottom: 0.3em; color: #e0e0ff; 
+/* Custom scrollbar styling for markdown content */
+.markdown-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.markdown-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.markdown-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+.markdown-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Responsive design for different screen sizes */
+/* Large screens (1400px+): Use ~85% of screen width */
+@media (min-width: 1400px) {
+    .main-content {
+        padding: 20px 7.5%; /* 85% content area */
+    }
+}
+
+/* Medium screens (1200px-1399px): Use ~90% of screen width */
+@media (min-width: 1200px) and (max-width: 1399px) {
+    .main-content {
+        padding: 20px 5%; /* 90% content area */
+    }
+}
+
+/* Smaller screens: Keep reasonable margins */
+@media (max-width: 1199px) {
+    .main-content {
+        padding: 20px 3%; /* 94% content area */
+    }
+}
+
+/* Mobile: Minimal margins */
+@media (max-width: 768px) {
+    .main-content {
+        padding: 20px 2%; /* 96% content area */
+    }
+}
     border-bottom: 1px solid #2a2958; padding-bottom: 0.2em; font-size: 1.15em;
 }
 .markdown-content h1 { font-size: 1.3em; }

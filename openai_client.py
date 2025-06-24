@@ -56,6 +56,11 @@ class OpenAISpeechClient:
         self.client_audio_chunk_duration_ms = self.config.get("CHUNK_MS", 30)
         self.client_initiated_truncated_item_ids = set()
         
+        # Pending sleep state for delayed transitions
+        self.pending_sleep_after_audio = False  # Flag to indicate sleep after current audio
+        self.pending_sleep_reason = ""  # Store the reason for logging
+        self.goodbye_in_progress = False  # Flag to prevent user audio during goodbye
+        
         # Track how many times we've presented each call update
         self.call_update_presentation_count = {}  # job_id -> count of presentations
         
@@ -444,7 +449,7 @@ class OpenAISpeechClient:
         if primed_context_parts:
             full_primed_context = "\n".join(primed_context_parts)
             self.log(f"Priming LLM with context:\n{full_primed_context}")
-            effective_instructions += "\n\n---\nIMPORTANT CONTEXT FROM PREVIOUS INTERACTIONS (Use this to inform your responses):\n" + full_primed_context + "\n--- END OF PREVIOUS CONTEXT ---"
+            effective_instructions += "\n\n---\nIMPORTANT: You have just been activated by a wake word. The following is HISTORICAL context from previous conversations for reference only. Do NOT act on any requests mentioned in this historical context. Wait for the user to speak and provide their current request.\n\nHISTORICAL CONTEXT:\n" + full_primed_context + "\n--- END OF HISTORICAL CONTEXT ---"
             self.log(f" Effective instruciton: \n{ effective_instructions}")
         else:
             self.log("No additional context (history summary or call updates) to prime LLM with.")
@@ -516,6 +521,7 @@ class OpenAISpeechClient:
     def get_current_assistant_speech_duration_ms(self) -> int:
         if self.last_assistant_item_id: return self.current_assistant_item_played_ms
         return 0
+    def is_goodbye_in_progress(self) -> bool: return self.goodbye_in_progress
     def _perform_truncation(self, reason_prefix: str):
         item_id_to_truncate = self.last_assistant_item_id
         if not item_id_to_truncate: return
@@ -540,6 +546,56 @@ class OpenAISpeechClient:
 
     def handle_local_user_speech_interrupt(self):
         if self.get_app_state() == "SENDING_TO_OPENAI": self._perform_truncation(reason_prefix="Local VAD")
+
+    def _transition_to_sleep(self, reason):
+        """Transition to sleep mode after clearing audio state."""
+        self.log(f"Client: Executing delayed sleep transition. Reason: '{reason}'.")
+        
+        # Clear goodbye flag
+        self.goodbye_in_progress = False
+        self.log("🔊 AUDIO: Goodbye sequence complete - user audio enabled")
+        
+        # Clear all audio buffers
+        if self.player:
+            self.player.clear()
+            self.player.flush()
+        self.openai_audio_buffer_raw_bytes = b''
+        
+        # Reset audio state
+        self.last_assistant_item_id = None
+        self.current_assistant_item_played_ms = 0
+        
+        # Transition to wake word mode
+        if self.wake_word_active:
+            self.set_app_state("LISTENING_FOR_WAKEWORD")
+            print(f"\n*** Assistant listening for wake word: '{self.wake_word_detector_instance.wake_word_model_name}' (Reason: {reason}) ***\n")
+        else:
+            print(f"\n*** Conversation turn ended by LLM (Reason: {reason}). Ready for next query. ***\n")
+
+    def send_wake_up_message(self):
+        """Send a wake-up system message to provide context after wake word detection."""
+        if not (self.ws_app and self.connected):
+            return
+            
+        wake_up_message = {
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "WAKE-UP: You have just been activated by your wake word. Give a brief, friendly greeting to let the user know you're awake and ready (e.g., 'Hi, I'm back!' or 'Hello! How can I help?'). Then wait for the user's request. Do not reference previous conversations unless specifically asked."
+                    }
+                ]
+            }
+        }
+        
+        try:
+            self.ws_app.send(json.dumps(wake_up_message))
+            self.log("Client: Sent wake-up system message to LLM")
+        except Exception as e:
+            self.log(f"Client: Error sending wake-up message: {e}")
 
  
     def _format_message(self, msg, msg_type):
@@ -748,34 +804,48 @@ class OpenAISpeechClient:
                 reason = parsed_args.get("reason", "No reason specified by LLM.")
                 self.log(f"Client: LLM requests '{END_CONVERSATION_TOOL_NAME}'. Reason: '{reason}'.")
                 
-                # 1. Wait for any current audio to finish
-                self.log("🔊 AUDIO: Waiting for current audio to complete...")
-                audio_finished = self._wait_for_audio_completion()
-                if not audio_finished:
-                    self.log("⚠️ WARNING: Audio completion timeout reached")
+                # Set goodbye flag to prevent user audio during goodbye message
+                self.goodbye_in_progress = True
+                self.log("🔊 AUDIO: Starting goodbye sequence - blocking user audio")
                 
-                # 2. Add a small delay to ensure last message was heard
-                end_conv_delay_s = self.config.get("END_CONV_AUDIO_FINISH_DELAY_S", 2.0)
-                time.sleep(end_conv_delay_s)
+                # Send response instructing LLM to say goodbye, then sleep after audio completes
+                goodbye_instruction = "Say a brief goodbye message (e.g., 'Okay, bye!' or 'Goodbye!') and I will go to sleep after you finish speaking."
+                tool_response_payload = {
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": goodbye_instruction
+                    }
+                }
                 
-                # 3. Clear all audio buffers
-                if self.player:
-                    self.player.clear()
-                    self.player.flush()
-                self.openai_audio_buffer_raw_bytes = b''
-                
-                # 4. Reset audio state
-                self.last_assistant_item_id = None
-                self.current_assistant_item_played_ms = 0
-                
-                # 5. Transition to wake word mode
-                self.log(f"Client: Executing '{END_CONVERSATION_TOOL_NAME}' for reason: '{reason}'.")
-                if self.wake_word_active:
-                    self.set_app_state("LISTENING_FOR_WAKEWORD")
-                    print(f"\n*** Assistant listening for wake word: '{self.wake_word_detector_instance.wake_word_model_name}' (Reason: {reason}) ***\n")
-                else:
-                    print(f"\n*** Conversation turn ended by LLM (Reason: {reason}). Ready for next query. ***\n")
-                return
+                try:
+                    if self.ws_app and self.connected:
+                        self.ws_app.send(json.dumps(tool_response_payload))
+                        self.log(f"Client: Sent goodbye instruction for end_conversation tool.")
+                        
+                        # Trigger LLM to respond with goodbye
+                        response_create_payload = {
+                            "type": "response.create",
+                            "response": {
+                                "modalities": ["text", "audio"],
+                                "voice": self.config.get("OPENAI_VOICE", "ash"),
+                                "output_audio_format": "pcm16"
+                            }
+                        }
+                        self.ws_app.send(json.dumps(response_create_payload))
+                        self.log(f"Client: Triggered LLM response for goodbye message.")
+                        
+                        # Set pending sleep to happen after the goodbye audio completes
+                        self.pending_sleep_after_audio = True
+                        self.pending_sleep_reason = reason
+                        return
+                except Exception as e_send_goodbye:
+                    self.log(f"Client ERROR: Could not send goodbye instruction: {e_send_goodbye}")
+                    # Fallback to immediate transition if sending fails
+                    self.goodbye_in_progress = False  # Clear flag on error
+                    self._transition_to_sleep(reason)
+                    return
 
             elif function_to_execute_name in TOOL_HANDLERS:
                 handler_function = TOOL_HANDLERS[function_to_execute_name]
@@ -808,6 +878,10 @@ class OpenAISpeechClient:
                  print(f"\n*** CLIENT: Speak now to interact with OpenAI (WW inactive or sending mode). ***\n")
 
         elif msg_type == "response.audio.delta":
+            # Skip processing audio if we're in wake word mode (sleeping)
+            if self.get_app_state() == "LISTENING_FOR_WAKEWORD":
+                return
+                
             audio_data_b64 = msg.get("delta")
             item_id_of_delta = msg.get("item_id")
             self.audio_received_counter += 1
@@ -853,6 +927,14 @@ class OpenAISpeechClient:
                     self.openai_audio_buffer_raw_bytes = b''
             if self.player: self.player.flush()
             self.log(f"⚙️ STATE: Audio complete, app state: {self.get_app_state()}")
+            
+            # Check if we should transition to sleep after audio completion
+            if self.pending_sleep_after_audio:
+                self.log("🔊 AUDIO: Executing pending sleep transition after audio completion")
+                self.pending_sleep_after_audio = False
+                self._transition_to_sleep(self.pending_sleep_reason)
+                return
+            
             if not (self.get_app_state() == "LISTENING_FOR_WAKEWORD" and self.wake_word_active):
                 print(f"\n*** Assistant has finished speaking. Ready for your next query. (Ctrl+C to exit) ***\n")
 

@@ -53,6 +53,9 @@ load_dotenv() # Ensure .env is loaded when this module is imported
 CONTEXT_SUMMARIZER_MODEL_FOR_TOOL = os.getenv("CONTEXT_SUMMARIZER_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY_FOR_TOOL_SUMMARIZER = os.getenv("OPENAI_API_KEY") # Get key directly
 
+# Search Provider Configuration
+PREFERRED_SEARCH_PROVIDER = os.getenv("PREFERRED_SEARCH_PROVIDER", "openai").lower()
+
 # Import the new Google services module
 try:
     from google_llm_services import get_gemini_response, get_gemini_response_with_thinking_stream, GOOGLE_API_KEY
@@ -226,33 +229,19 @@ def handle_display_on_interface(display_type: str, data: dict, config: dict, tit
     except Exception as e:
         _tool_log(f"Unexpected error in display handler: {e}"); return "Unexpected error displaying content."
 
-def handle_get_taxi_ideas_for_today(current_date: str, config: dict, specific_focus: str = None) -> str:
-    _tool_log(f"Handling get_taxi_ideas_for_today. Date: {current_date}, Focus: {specific_focus}")
-    
-    # Original Gemini implementation (commented out)
-    # if not GOOGLE_SERVICES_AVAILABLE: return "Error: Google AI services are not available for taxi ideas."
-    # system_instruction_for_taxi_ideas = f"You are an AI assistant for Dubai Taxi Corporation (DTC). Find actionable ideas, news, and events for taxi services in Dubai for {current_date}. Consider Khaleej Times or local news. If no specific business-impacting ideas are found for {current_date}, respond with: 'No new business ideas found for today, {current_date}, based on current information.' Only provide info for {current_date}."
-    # user_prompt_for_gemini = f"Analyze information for Dubai for today, {current_date}, and provide actionable taxi service ideas or relevant event information."
-    # if specific_focus: user_prompt_for_gemini += f" Pay special attention to: {specific_focus}."
-    # return get_gemini_response(user_prompt_text=user_prompt_for_gemini, system_instruction_text=system_instruction_for_taxi_ideas, use_google_search_tool=True)
-    
-    # New OpenAI implementation
-    # Check if OpenAI API key is available
+# --- Unified Search Functions ---
+
+def _search_with_openai(user_prompt: str, system_instruction: str, search_context: str = "general", model: str = "gpt-4o-search-preview") -> str:
+    """Execute search using OpenAI's search models"""
     if not OPENAI_API_KEY_FOR_TOOL_SUMMARIZER:
-        _tool_log("ERROR: OPENAI_API_KEY not found in environment for taxi ideas.")
-        return "Error: OpenAI services are not available for taxi ideas (missing API key)."
-    
-    system_instruction = f"You are an AI assistant for Dubai Taxi Corporation (DTC). Find actionable ideas, news, and events for taxi services in Dubai for {current_date}. Consider Khaleej Times or local news. If no specific business-impacting ideas are found for {current_date}, respond with: 'No new business ideas found for today, {current_date}, based on current information.' Only provide info for {current_date}."
-    
-    user_prompt = f"Analyze information for Dubai for today, {current_date}, and provide actionable taxi service ideas or relevant event information."
-    if specific_focus:
-        user_prompt += f" Pay special attention to: {specific_focus}."
+        _tool_log("ERROR: OPENAI_API_KEY not found in environment for search.")
+        return "Error: OpenAI services are not available for search (missing API key)."
     
     try:
         openai_client = openai.OpenAI(api_key=OPENAI_API_KEY_FOR_TOOL_SUMMARIZER)
         
         response = openai_client.chat.completions.create(
-            model="gpt-4o-search-preview",
+            model=model,
             messages=[
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": user_prompt}
@@ -271,56 +260,87 @@ def handle_get_taxi_ideas_for_today(current_date: str, config: dict, specific_fo
             }
         )
         
-        _tool_log(f"Successfully received response from OpenAI for taxi ideas")
+        _tool_log(f"Successfully received response from OpenAI search for context: {search_context}")
         return response.choices[0].message.content
     except Exception as e:
-        _tool_log(f"ERROR in get_taxi_ideas_for_today with OpenAI: {e}")
-        return f"Error: Could not get taxi ideas. Detail: {str(e)}"
+        _tool_log(f"ERROR in OpenAI search: {e}")
+        return f"Error: Could not get search results from OpenAI. Detail: {str(e)}"
+
+def _search_with_google_new_api(user_prompt: str, system_instruction: str) -> str:
+    """Execute search using Google's new API with proper grounding"""
+    if not GOOGLE_SERVICES_AVAILABLE:
+        _tool_log("ERROR: Google services not available for search.")
+        return "Error: Google AI services are not available for search."
+    
+    if not GOOGLE_API_KEY:
+        _tool_log("ERROR: GOOGLE_API_KEY not found in environment for search.")
+        return "Error: Google AI service is not available due to missing API key."
+    
+    try:
+        # Import the new Google library
+        from google import genai as new_genai
+        from google.genai import types as new_types
+        
+        # Configure the client (new API)
+        client = new_genai.Client(api_key=GOOGLE_API_KEY)
+        
+        # Define the grounding tool (new API)
+        grounding_tool = new_types.Tool(
+            google_search=new_types.GoogleSearch()
+        )
+        
+        # Configure generation settings
+        config = new_types.GenerateContentConfig(
+            tools=[grounding_tool],
+            system_instruction=system_instruction if system_instruction else None
+        )
+        
+        # Make the request
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=user_prompt,
+            config=config,
+        )
+        
+        _tool_log("Successfully received response from Google search with new API")
+        return response.text
+        
+    except ImportError:
+        _tool_log("ERROR: New Google GenAI library not available. Please install: pip install google-genai")
+        return "Error: New Google AI library not installed. Please install the required package."
+    except Exception as e:
+        _tool_log(f"ERROR in Google search with new API: {e}")
+        return f"Error: Could not get search results from Google AI. Detail: {str(e)}"
+
+def execute_web_search(user_prompt: str, system_instruction: str, search_context: str = "general", openai_model: str = "gpt-4o-search-preview") -> str:
+    """Unified web search function that uses the configured search provider"""
+    _tool_log(f"Executing web search with provider: {PREFERRED_SEARCH_PROVIDER}, context: {search_context}, model: {openai_model}")
+    
+    if PREFERRED_SEARCH_PROVIDER == "openai":
+        return _search_with_openai(user_prompt, system_instruction, search_context, openai_model)
+    elif PREFERRED_SEARCH_PROVIDER == "google":
+        return _search_with_google_new_api(user_prompt, system_instruction)
+    else:
+        _tool_log(f"WARNING: Unknown search provider '{PREFERRED_SEARCH_PROVIDER}', falling back to OpenAI")
+        return _search_with_openai(user_prompt, system_instruction, search_context, openai_model)
+
+def handle_get_taxi_ideas_for_today(current_date: str, config: dict, specific_focus: str = None) -> str:
+    _tool_log(f"Handling get_taxi_ideas_for_today. Date: {current_date}, Focus: {specific_focus}")
+    
+    system_instruction = f"You are an AI assistant for Dubai Taxi Corporation (DTC). Find actionable ideas, news, and events for taxi services in Dubai for {current_date}. Consider Khaleej Times or local news. If no specific business-impacting ideas are found for {current_date}, respond with: 'No new business ideas found for today, {current_date}, based on current information.' Only provide info for {current_date}."
+    
+    user_prompt = f"Analyze information for Dubai for today, {current_date}, and provide actionable taxi service ideas or relevant event information."
+    if specific_focus:
+        user_prompt += f" Pay special attention to: {specific_focus}."
+    
+    return execute_web_search(user_prompt, system_instruction, "taxi_ideas", "gpt-4o-search-preview")
 
 def handle_general_google_search(search_query: str, config: dict) -> str:
     _tool_log(f"Handling general_google_search. Query: '{search_query}'")
     
-    # Original Gemini implementation (commented out)
-    # if not GOOGLE_SERVICES_AVAILABLE: return "Error: Google AI services are not available for general search."
-    # system_instruction_for_general_search = "You are an AI assistant for a Dubai Taxi Corporation (DTC) employee. Answer the user's query based ONLY on Google Search results. Be factual and concise. Context is Dubai-related, professional. If no clear answer, state that. Prioritize reputable sources. Give direct answer."
-    # return get_gemini_response(user_prompt_text=search_query, system_instruction_text=system_instruction_for_general_search, use_google_search_tool=True)
-    
-    # New OpenAI implementation
-    # Check if OpenAI API key is available
-    if not OPENAI_API_KEY_FOR_TOOL_SUMMARIZER:
-        _tool_log("ERROR: OPENAI_API_KEY not found in environment for general search.")
-        return "Error: OpenAI services are not available for general search (missing API key)."
-    
     system_instruction = "You are an AI assistant for a Dubai Taxi Corporation (DTC) employee. Answer the user's query based ONLY on search results. Be factual and concise. Context is Dubai-related, professional. If no clear answer, state that. Prioritize reputable sources. Give direct answer."
     
-    try:
-        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY_FOR_TOOL_SUMMARIZER)
-        
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-search-preview",
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": search_query}
-            ],
-            response_format={
-                "type": "text"
-            },
-            web_search_options={
-                "search_context_size": "high",
-                "user_location": {
-                    "type": "approximate",
-                    "approximate": {
-                        "country": "AE"
-                    }
-                }
-            }
-        )
-        
-        _tool_log(f"Successfully received response from OpenAI for general search")
-        return response.choices[0].message.content
-    except Exception as e:
-        _tool_log(f"ERROR in general_google_search with OpenAI: {e}")
-        return f"Error: Could not get search results. Detail: {str(e)}"
+    return execute_web_search(search_query, system_instruction, "general_search", "gpt-4o-search-preview")
 
 # --- New Tool Handlers for Phase 1 ---
 
@@ -734,7 +754,7 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
         # If error_loading_kb is true, we'll handle it next.
 
     if error_loading_kb:
-        error_html = f"<!DOCTYPE html><html><head><title>KB Error</title></head><body><p>Error loading the required Knowledge Base ('{knowledge_base_source}'). Cannot generate visualization.</p></body></html>"
+        error_html = f"<!DOCTYPE html><html><head><title>KB Error</title><style>body{{background-color:#100F24;color:#E0E0E0;font-family:'Space Grotesk','Noto Sans',sans-serif;padding:20px;text-align:center;}}</style></head><body><p>Error loading the required Knowledge Base ('{knowledge_base_source}'). Cannot generate visualization.</p></body></html>"
         error_payload_to_frontend = {"type": "html", "payload": {"content": error_html, "title": "Knowledge Base Error"}}
         try:
             requests.post(fastapi_url, json=error_payload_to_frontend, timeout=5)
@@ -746,6 +766,13 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
     # --- Gemini System Instruction ---
     gemini_system_instruction = """You are an expert HTML, CSS, and JavaScript developer specializing in creating rich, self-contained, and responsive data dashboards and visualizations.
         Your output MUST be a single, valid HTML5 document, starting with <!DOCTYPE html> and ending with </html>.
+
+        **CRITICAL STYLING REQUIREMENT:**
+        ALL HTML you generate MUST use a dark background theme to match the main application interface. Your CSS MUST include:
+        - Body background: #100F24 (dark blue/purple)
+        - Primary text color: #E0E0E0 (light gray)
+        - Font family: 'Space Grotesk', 'Noto Sans', sans-serif
+        - This styling MUST be applied to the body element in your CSS
 
         **Core Requirements:**
         1.  **Self-Contained:**
@@ -759,20 +786,20 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
         3.  **No Charts Alternative:** If charts are not suitable or not explicitly requested for the data, use well-styled HTML tables, lists, cards, definition lists, or other semantic HTML elements to present the information clearly and professionally.
         4.  **Output Format:** Your entire response MUST be only the HTML code. Do NOT include any explanatory text, apologies, comments (except valid HTML comments <!-- ... --> if truly necessary for complex JS), or anything outside the valid HTML document itself.
         5.  **Fallback:** If the provided knowledge base data is insufficient or the user's request cannot be fulfilled as a meaningful visual HTML page (after genuinely trying), you MUST return the following simple HTML page ONLY:
-        `<!DOCTYPE html><html><head><title>Request Unfulfilled</title><style>body{font-family:sans-serif;padding:20px;text-align:center;}p{font-size:1.2em;}</style></head><body><p>The requested visualization cannot be generated due to insufficient data or an unclear request.</p></body></html>`
+        `<!DOCTYPE html><html><head><title>Request Unfulfilled</title><style>body{background-color:#100F24;color:#E0E0E0;font-family:'Space Grotesk','Noto Sans',sans-serif;padding:20px;text-align:center;}p{font-size:1.2em;}</style></head><body><p>The requested visualization cannot be generated due to insufficient data or an unclear request.</p></body></html>`
 
-        **Design & Styling Guidelines (Emulate a modern, clean, professional dashboard like the conceptual example):**
+        **Design & Styling Guidelines (Dark Theme):**
         1.  **Layout:**
         *   Employ a responsive grid-based layout (CSS Grid or Flexbox) for arranging multiple components like KPI cards and charts. Use `repeat(auto-fit, minmax(280px, 1fr))` or similar for adaptable grids.
         *   Ensure sections are clearly delineated. Use ample padding (e.g., `20px`) within sections and around elements for a clean, uncluttered look.
-        2.  **Aesthetics:**
-        *   **Font:** Use a clean, readable sans-serif font stack (e.g., `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif`).
-        *   **Color Palette:**
-            *   Main Background: A light, neutral color (e.g., `#f8f9fa` or `#e9eff1`).
-            *   Card/Container Backgrounds: White (e.g., `#ffffff`).
-            *   Primary Text: Dark gray/off-black (e.g., `#333` or `#495057`).
-            *   Secondary/Label Text: Medium gray (e.g., `#6c757d` or `#555`).
-            *   Chart & Accent Colors: Use a professional and harmonious palette. Examples include blues (e.g., `#3b82f6`), greens (e.g., `#10b981`), oranges (e.g., `#f59e0b`), reds (e.g., `#ef4444`). Ensure good color contrast for accessibility.
+        2.  **Aesthetics (Dark Theme):**
+        *   **Font:** Use 'Space Grotesk', 'Noto Sans', sans-serif to match the main application.
+        *   **Color Palette (DARK THEME):**
+            *   Main Background: #100F24 (dark blue/purple - REQUIRED)
+            *   Card/Container Backgrounds: #1f1e3d (darker blue/purple) or #21204B
+            *   Primary Text: #E0E0E0 (light gray - REQUIRED)
+            *   Secondary/Label Text: #a0aec0 or #c7c7d1 (medium light gray)
+            *   Chart & Accent Colors: Use colors that work well on dark backgrounds: bright blues (#3b82f6, #60a5fa), greens (#10b981, #34d399), oranges (#f59e0b, #fbbf24), reds (#ef4444, #f87171). Ensure good contrast against the dark background.
         *   **Cards:** Style cards with rounded corners (e.g., `border-radius: 8px;`), subtle shadows (e.g., `box-shadow: 0 2px 5px rgba(0,0,0,0.1);`), and light borders (e.g., `1px solid #e0e0e0;`). Consider subtle hover effects.
         *   **Typography:** Use clear typographic hierarchy (differentiated font sizes/weights for headings (H1-H4), subheadings, values, labels).
         3.  **Component Styling Examples (Conceptual):**
@@ -919,11 +946,11 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
 
     if html_response_from_gemini.startswith("Error:"):
         _tool_log(f"Error received directly from get_gemini_response: {html_response_from_gemini}")
-        final_html_to_display = f"<!DOCTYPE html><html><head><title>Service Error</title><style>body{{font-family:sans-serif;padding:20px;text-align:center;}}h1{{color:red;}}</style></head><body><h1>Visualization Service Error</h1><p>{html_response_from_gemini.replace('<', '<').replace('>', '>')}</p></body></html>"
+        final_html_to_display = f"<!DOCTYPE html><html><head><title>Service Error</title><style>body{{background-color:#100F24;color:#E0E0E0;font-family:'Space Grotesk','Noto Sans',sans-serif;padding:20px;text-align:center;}}h1{{color:#ef4444;}}</style></head><body><h1>Visualization Service Error</h1><p>{html_response_from_gemini.replace('<', '<').replace('>', '>')}</p></body></html>"
         llm_feedback_message = f"Sorry, I encountered an issue with the visualization service: {html_response_from_gemini}"
     elif not (html_response_from_gemini.strip().lower().startswith("<!doctype html>") and html_response_from_gemini.strip().lower().endswith("</html>")):
         _tool_log(f"Warning: Gemini response does not appear to be a valid/complete HTML document. Snippet: {html_response_from_gemini[:250]}...")
-        final_html_to_display = f"<!DOCTYPE html><html><head><title>Generation Error</title><style>body{{font-family:sans-serif;padding:20px;}}h1{{color:orange;}}pre{{white-space:pre-wrap;word-wrap:break-word;background:#f0f0f0;padding:10px;border:1px solid #ccc;}}</style></head><body><h1>Visualization Generation Issue</h1><p>The visualization service returned an unexpected format. Please try rephrasing your request or ask for a simpler display.</p><p><b>Service Response Snippet:</b></p><pre>{html_response_from_gemini.replace('<', '<').replace('>', '>')[:1000]}</pre></body></html>"
+        final_html_to_display = f"<!DOCTYPE html><html><head><title>Generation Error</title><style>body{{background-color:#100F24;color:#E0E0E0;font-family:'Space Grotesk','Noto Sans',sans-serif;padding:20px;}}h1{{color:#f59e0b;}}pre{{white-space:pre-wrap;word-wrap:break-word;background:#1f1e3d;padding:10px;border:1px solid #302f58;color:#c7c7d1;}}</style></head><body><h1>Visualization Generation Issue</h1><p>The visualization service returned an unexpected format. Please try rephrasing your request or ask for a simpler display.</p><p><b>Service Response Snippet:</b></p><pre>{html_response_from_gemini[:1000]}</pre></body></html>"
         llm_feedback_message = "It seems there was an issue formatting the visualization. You might want to try rephrasing your request."
     else:
         # It looks like valid HTML, use it.
@@ -933,7 +960,7 @@ def handle_generate_html_visualization(user_request: str, knowledge_base_source:
             llm_feedback_message = f"I couldn't generate the '{effective_title_for_page}' visualization. It seems there wasn't enough data, or the request was a bit unclear for a visual display."
             _tool_log("Gemini returned its standard 'Request Unfulfilled' fallback HTML.")
         else:
-            llm_feedback_message = f"Okay, I've generated and displayed the '{effective_title_for_page}' visualization for you."
+            llm_feedback_message = f"I've created the '{effective_title_for_page}' visualization for you."
             _tool_log(f"Successfully received valid HTML response from Gemini (length: {len(final_html_to_display)} bytes).")
 
     # Send to frontend

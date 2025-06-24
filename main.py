@@ -177,6 +177,8 @@ def set_app_state_main(new_state): # Unchanged
                 openai_client_instance._clear_audio_state()
             elif new_state == STATE_SENDING_TO_OPENAI:
                 state_just_changed_to_sending = True
+                openai_client_instance._clear_audio_state()
+
 def get_app_state_main(): # Unchanged
     with state_lock: return current_app_state
 
@@ -323,9 +325,18 @@ def continuous_audio_pipeline(openai_client_ref): # Unchanged
                     log_section(f"WAKE WORD DETECTED: '{wake_word_detector_instance.wake_word_model_name.upper()}'!")
                     set_app_state_main(STATE_SENDING_TO_OPENAI)
                     if hasattr(wake_word_detector_instance, 'reset'): wake_word_detector_instance.reset()
+                    # Send wake-up greeting message to provide fresh context
+                    if openai_client_ref and hasattr(openai_client_ref, 'send_wake_up_message'):
+                        openai_client_ref.send_wake_up_message()
+                        log("*** Sent wake-up greeting context to LLM ***", logging.INFO)
                     log("*** Wake word detected! Sending audio to OpenAI... ***", logging.INFO)
 
             if current_pipeline_app_state_iter == STATE_SENDING_TO_OPENAI and raw_audio_bytes_24k:
+                # Check if goodbye is in progress - if so, don't send user audio to OpenAI
+                if hasattr(openai_client_ref, 'goodbye_in_progress') and openai_client_ref.goodbye_in_progress:
+                    # Skip sending user audio during goodbye sequence
+                    continue
+                    
                 if openai_client_ref.connected: # Send only if connected
                     # Increment counter and log periodically
                     audio_send_counter += 1
